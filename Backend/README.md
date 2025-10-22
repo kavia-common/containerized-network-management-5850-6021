@@ -14,7 +14,23 @@ Server runs on http://localhost:3001 (host 0.0.0.0 by default when run directly)
 
 - API prefix: all endpoints are under `/api`
 - Health: GET /api/health
-- OpenAPI (minimal): GET /openapi.json
+
+## Swagger / OpenAPI
+
+Interactive API docs and OpenAPI JSON are available:
+
+- Swagger UI: GET /api/docs
+- OpenAPI JSON: GET /api/openapi.json
+
+These document and expose:
+- GET /api/devices
+- POST /api/devices
+- GET /api/devices/{id}
+- PUT /api/devices/{id}
+- DELETE /api/devices/{id}
+- GET /api/devices/status
+- POST /api/devices/{id}/status
+- GET /api/health
 
 CORS: Enabled for `/api/*` allowing all origins in preview/dev so the UI can call the backend even without dev proxying. In development with CRA, package.json proxy forwards `/api` to port 3001.
 

@@ -8,15 +8,42 @@ from typing import Dict, Any, List, Optional
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+try:
+    # Use flask-smorest for OpenAPI/Swagger UI generation
+    from flask_smorest import Api
+except Exception:  # pragma: no cover
+    Api = None  # Will raise at runtime if missing; requirements.txt updated accordingly
+
+
 # App configuration
 def create_app():
     """
     Factory to create and configure the Flask application with in-memory storage.
     Uses environment variables for future MongoDB integration but does not require them at runtime.
+
+    OpenAPI/Swagger:
+    - Interactive docs served at /api/docs
+    - OpenAPI JSON served at /api/openapi.json
     """
     app = Flask(__name__)
     # Enable CORS for API routes; allow all origins in preview/dev
     CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+    # OpenAPI and Swagger UI config
+    app.config["API_TITLE"] = "Device Management REST API"
+    app.config["API_VERSION"] = "1.0.0"
+    app.config["OPENAPI_VERSION"] = "3.0.3"
+    # Serve docs under /api/docs and the JSON at /api/openapi.json
+    app.config["OPENAPI_URL_PREFIX"] = "/api"
+    app.config["OPENAPI_JSON_PATH"] = "openapi.json"
+    app.config["OPENAPI_SWAGGER_UI_PATH"] = "docs"
+    app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
+
+    if Api is None:
+        raise RuntimeError(
+            "flask-smorest is required for OpenAPI docs. Please install dependencies."
+        )
+    api = Api(app)
 
     # Configuration via env (placeholders for future MongoDB integration)
     app.config["MONGODB_URL"] = os.getenv("MONGODB_URL", "")
@@ -87,10 +114,9 @@ def create_app():
         - Response time randomized within a range to simulate latency
         """
         try:
-            # Determine last segment for both IPv4/IPv6 simplistically
             parts = ip.split(".")
             last = parts[-1]
-            last_num = int(''.join([c for c in last if c.isdigit()]) or "0")
+            last_num = int("".join([c for c in last if c.isdigit()]) or "0")
             reachable = (last_num % 2 == 0)
             response_time_ms = 20 + (last_num % 50)  # pseudo-latency
             return reachable, response_time_ms if reachable else None
@@ -110,10 +136,29 @@ def create_app():
     def list_devices():
         """
         Get all devices with optional filtering and sorting.
-        Query params:
-          - type: filter by device type
-          - status: filter by status (online/offline/unknown)
-          - sort: field to sort by (name, status, type, location)
+        ---
+        tags:
+          - Devices
+        parameters:
+          - in: query
+            name: type
+            schema:
+              type: string
+            description: Filter by device type
+          - in: query
+            name: status
+            schema:
+              type: string
+              enum: [online, offline, unknown]
+            description: Filter by device status
+          - in: query
+            name: sort
+            schema:
+              type: string
+            description: Sort by field (name, status, type, location)
+        responses:
+          200:
+            description: List of devices
         Returns:
           - 200 JSON array of devices
         """
@@ -140,16 +185,28 @@ def create_app():
     def create_device():
         """
         Create a new device.
-        Request body (JSON):
-          - name, ip_address, type, location [required]
-        Validation:
-          - Required fields
-          - IP format
-          - Prevent duplicate IP addresses
-        Returns:
-          - 201 with created device JSON
-          - 400 for bad request
-          - 409 for duplicate IP
+        ---
+        tags:
+          - Devices
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, ip_address, type, location]
+                properties:
+                  name: {type: string}
+                  ip_address: {type: string, format: ipv4}
+                  type: {type: string, enum: [router, switch, server, other]}
+                  location: {type: string}
+        responses:
+          201:
+            description: Device created
+          400:
+            description: Invalid request
+          409:
+            description: Duplicate IP address
         """
         payload = request.get_json(silent=True) or {}
         ok, errors = validate_device_payload(payload, require_all=True)
@@ -178,6 +235,20 @@ def create_app():
     def get_device(device_id: str):
         """
         Retrieve a specific device by ID.
+        ---
+        tags:
+          - Devices
+        parameters:
+          - in: path
+            name: device_id
+            required: true
+            schema:
+              type: string
+        responses:
+          200:
+            description: Device found
+          404:
+            description: Device not found
         Returns 200 with device JSON or 404 if not found.
         """
         device = devices.get(device_id)
@@ -190,15 +261,36 @@ def create_app():
     def update_device(device_id: str):
         """
         Update an existing device.
-        Request body (JSON): name, ip_address, type, location
-        Validations:
-          - Same as create
-          - Prevent duplicate IP (exclude current device)
-        Returns:
-          - 200 with updated device JSON
-          - 400 invalid request
-          - 404 not found
-          - 409 duplicate IP
+        ---
+        tags:
+          - Devices
+        parameters:
+          - in: path
+            name: device_id
+            required: true
+            schema:
+              type: string
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, ip_address, type, location]
+                properties:
+                  name: {type: string}
+                  ip_address: {type: string, format: ipv4}
+                  type: {type: string, enum: [router, switch, server, other]}
+                  location: {type: string}
+        responses:
+          200:
+            description: Device updated
+          400:
+            description: Invalid request
+          404:
+            description: Device not found
+          409:
+            description: Duplicate IP
         """
         if device_id not in devices:
             return jsonify({"code": 404, "message": "Device not found"}), 404
@@ -230,7 +322,20 @@ def create_app():
     def delete_device(device_id: str):
         """
         Delete a device by ID.
-        Returns 204 on success, 404 if not found.
+        ---
+        tags:
+          - Devices
+        parameters:
+          - in: path
+            name: device_id
+            required: true
+            schema:
+              type: string
+        responses:
+          204:
+            description: Deleted
+          404:
+            description: Not found
         """
         if device_id not in devices:
             return jsonify({"code": 404, "message": "Device not found"}), 404
@@ -243,6 +348,12 @@ def create_app():
     def get_all_status():
         """
         Retrieve statuses for all devices. Uses cached values where valid.
+        ---
+        tags:
+          - Status
+        responses:
+          200:
+            description: Array of statuses
         Returns 200 with array of {id, status, last_checked}
         """
         results: List[Dict[str, Any]] = []
@@ -264,6 +375,20 @@ def create_app():
     def check_status(device_id: str):
         """
         Manually trigger status check (simulated ping) for a device.
+        ---
+        tags:
+          - Status
+        parameters:
+          - in: path
+            name: device_id
+            required: true
+            schema:
+              type: string
+        responses:
+          200:
+            description: Status check result
+          404:
+            description: Device not found
         Returns 200 with {id, status, last_checked}
         """
         device = devices.get(device_id)
@@ -277,24 +402,10 @@ def create_app():
         device["last_checked"] = status_cache[device_id]["last_checked"]
         return jsonify({"id": device_id, "status": status, "last_checked": device["last_checked"]}), 200
 
-    @app.route("/openapi.json", methods=["GET"])
-    def openapi():
-        """
-        Return minimal OpenAPI document for endpoints implemented.
-        """
-        spec = {
-            "openapi": "3.0.3",
-            "info": {"title": "Device Management REST API", "version": "1.0.0"},
-            "servers": [{"url": "/api"}],
-            "paths": {
-                "/devices": {"get": {}, "post": {}},
-                "/devices/{id}": {"get": {}, "put": {}, "delete": {}},
-                "/devices/status": {"get": {}},
-                "/devices/{id}/status": {"post": {}},
-                "/health": {"get": {}},
-            },
-        }
-        return jsonify(spec), 200
+    # The OpenAPI JSON is automatically available at /api/openapi.json and Swagger UI at /api/docs
+
+    # Expose the Api instance on app for tooling (e.g., generate_openapi.py)
+    app.extensions["smorest_api"] = api
 
     return app
 
