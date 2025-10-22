@@ -10,10 +10,13 @@ This Flask backend provides RESTful endpoints under `/api` for managing network 
 3. Start server:
    PORT=3001 python app.py
 
-Server runs on http://localhost:3001
+Server runs on http://localhost:3001 (host 0.0.0.0 by default when run directly)
 
-Health: GET /api/health
-OpenAPI (minimal): GET /openapi.json
+- API prefix: all endpoints are under `/api`
+- Health: GET /api/health
+- OpenAPI (minimal): GET /openapi.json
+
+CORS: Enabled for `/api/*` allowing all origins in preview/dev so the UI can call the backend even without dev proxying. In development with CRA, package.json proxy forwards `/api` to port 3001.
 
 ## Environment variables
 

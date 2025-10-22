@@ -15,7 +15,8 @@ def create_app():
     Uses environment variables for future MongoDB integration but does not require them at runtime.
     """
     app = Flask(__name__)
-    CORS(app)
+    # Enable CORS for API routes; allow all origins in preview/dev
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
 
     # Configuration via env (placeholders for future MongoDB integration)
     app.config["MONGODB_URL"] = os.getenv("MONGODB_URL", "")
